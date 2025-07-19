@@ -1405,4 +1405,4 @@ if __name__ == "__main__":
     
     print(f"🌐 Starting server on http://127.0.0.1:8002")
     print(f"📱 Test address manually or click 'Geocode Address' button")
-    uvicorn.run(app, host="0.0.0.0", port=8002)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
