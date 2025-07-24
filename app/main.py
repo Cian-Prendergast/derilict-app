@@ -411,8 +411,53 @@ app, rt = fast_app(
                 border: 2px solid var(--color-base-300);
                 box-shadow: 0 10px 25px rgba(0,0,0,0.1);
             }
+        
             
+            .debug-panel:hover {
+                opacity: 1;
+            }
             
+            .debug-header {
+                padding: 8px 12px;
+                background: rgba(255,255,255,0.1);
+                border-radius: 8px 8px 0 0;
+                cursor: pointer;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                user-select: none;
+                font-size: 11px;
+            }
+            
+            .debug-panel.collapsed .debug-header {
+                border-radius: 8px;
+            }
+            
+            .debug-content {
+                padding: 10px;
+                max-height: 400px;
+                overflow-y: auto;
+                border-radius: 0 0 8px 8px;
+                transition: all 0.3s ease;
+                border-top: 1px solid rgba(255,255,255,0.1);
+            }
+            
+            .debug-panel.collapsed .debug-content {
+                max-height: 0;
+                padding: 0 10px;
+                overflow: hidden;
+                opacity: 0;
+            }
+            
+            .debug-toggle {
+                font-size: 12px;
+                line-height: 1;
+                transition: transform 0.3s ease;
+            }
+            
+            .debug-panel.collapsed .debug-toggle {
+                transform: rotate(-90deg);
+            }
         """),
     )
 )
@@ -604,6 +649,310 @@ def homepage():
         ),
         cls="w-full md:w-1/2 bg-base-100 p-6 rounded-lg shadow-lg custom-border border"
     )
+    
+    # Add script for form handling with extensive debugging
+    form_script = Script(f"""
+        // Debug panel
+        function createDebugPanel() {{
+            const panel = document.createElement('div');
+            panel.className = 'debug-panel';
+            panel.id = 'debug-panel';
+            panel.innerHTML = '<strong>Debug Log:</strong><br>';
+            document.body.appendChild(panel);
+            return panel;
+        }}
+        
+        function debugLog(message) {{
+            console.log(message);
+            const panel = document.getElementById('debug-panel') || createDebugPanel();
+            panel.innerHTML += new Date().toLocaleTimeString() + ': ' + message + '<br>';
+            panel.scrollTop = panel.scrollHeight;
+        }}
+
+        document.addEventListener('DOMContentLoaded', function() {{
+            debugLog('🚀 DOM Content Loaded - Starting initialization');
+            
+            // Form elements
+            const imageInput = document.getElementById('image-input');
+            const imagePreview = document.getElementById('image-preview');
+            const restoreButton = document.getElementById('restore-button');
+            
+            // Address elements
+            const addrInput = document.getElementById('address-input');
+            const latHid = document.getElementById('addr-lat');
+            const lonHid = document.getElementById('addr-lon');
+            const debugInfo = document.getElementById('debug-info');
+            
+            // Results elements
+            const loadingIndicator = document.getElementById('loading-indicator').parentElement;
+            const resultsPlaceholder = document.getElementById('results-placeholder');
+            
+            // State variables
+            let originalImageData = null;
+            
+            debugLog('📊 Elements found: ' + JSON.stringify({{
+                imageInput: !!imageInput,
+                addrInput: !!addrInput,
+                latHid: !!latHid,
+                lonHid: !!lonHid
+            }}));
+            
+            // Check for API key
+            const apikey = "{geoapify_api_key}";
+            debugLog('🔑 Geoapify API key length: ' + (apikey ? apikey.length : 0));
+            
+            // Initialize simple address input (no autocomplete for now - just manual entry)
+            if (addrInput) {{
+                addrInput.addEventListener('input', function() {{
+                    debugLog('📝 Address input: ' + this.value);
+                    if (debugInfo) {{
+                        debugInfo.innerHTML = `
+                            <p class="text-xs text-base-content/50">Current address: ${{this.value}}</p>
+                            <p class="text-xs text-base-content/50">Coordinates: ${{latHid.value || 'none'}}, ${{lonHid.value || 'none'}}</p>
+                        `;
+                    }}
+                }});
+                
+                // Simple geocoding button for testing
+                const geocodeBtn = document.createElement('button');
+                geocodeBtn.textContent = 'Geocode Address';
+                geocodeBtn.className = 'btn btn-sm btn-outline mt-2';
+                geocodeBtn.type = 'button';
+                geocodeBtn.onclick = async function() {{
+                    if (!apikey) {{
+                        debugLog('❌ No API key available for geocoding');
+                        alert('No Geoapify API key configured');
+                        return;
+                    }}
+                    
+                    if (!addrInput.value.trim()) {{
+                        debugLog('❌ No address entered');
+                        alert('Please enter an address first');
+                        return;
+                    }}
+                    
+                    debugLog('🌐 Attempting direct geocoding...');
+                    
+                    try {{
+                        const encodedAddress = encodeURIComponent(addrInput.value.trim());
+                        const url = `https://api.geoapify.com/v1/geocode/search?text=${{encodedAddress}}&apiKey=${{apikey}}`;
+                        
+                        debugLog('📡 Fetching: ' + url);
+                        
+                        const response = await fetch(url);
+                        const data = await response.json();
+                        
+                        debugLog('📊 Geocoding response: ' + JSON.stringify(data, null, 2));
+                        
+                        if (data.features && data.features.length > 0) {{
+                            const coords = data.features[0].geometry.coordinates;
+                            latHid.value = coords[1]; // latitude
+                            lonHid.value = coords[0]; // longitude
+                            
+                            debugLog('✅ Coordinates found: ' + coords[1] + ', ' + coords[0]);
+                            
+                            if (debugInfo) {{
+                                debugInfo.innerHTML = `
+                                    <p class="text-xs text-success">✅ Address geocoded successfully!</p>
+                                    <p class="text-xs text-base-content/50">Lat: ${{coords[1]}}, Lon: ${{coords[0]}}</p>
+                                `;
+                            }}
+                        }} else {{
+                            debugLog('❌ No coordinates found in response');
+                            alert('Address not found');
+                        }}
+                    }} catch (error) {{
+                        debugLog('❌ Geocoding error: ' + error.message);
+                        alert('Geocoding failed: ' + error.message);
+                    }}
+                }};
+                
+                addrInput.parentNode.appendChild(geocodeBtn);
+            }}
+            
+            // Get options from the form
+            function getOptions() {{
+                return {{
+                    style: document.querySelector('select[name="style"]').value,
+                    preserve_heritage: document.querySelector('input[name="preserve_heritage"]').checked,
+                    landscaping: document.querySelector('input[name="landscaping"]').checked,
+                    lighting: document.querySelector('input[name="lighting"]').checked,
+                    expand_building: document.querySelector('input[name="expand_building"]').checked
+                }};
+            }}
+            
+            // Handle image upload
+            imageInput.addEventListener('change', function(event) {{
+                const file = event.target.files[0];
+                
+                if (!file) {{
+                    resetForm();
+                    return;
+                }}
+                
+                debugLog('📸 Image selected: ' + file.name + ' (' + file.size + ' bytes)');
+                
+                // Validate file type
+                if (!file.type.startsWith('image/')) {{
+                    alert('Please select a valid image file.');
+                    resetForm();
+                    return;
+                }}
+                
+                // Validate file size (max 10MB)
+                if (file.size > 10 * 1024 * 1024) {{
+                    alert('Image size must be less than 10MB.');
+                    resetForm();
+                    return;
+                }}
+                
+                // Show preview
+                const reader = new FileReader();
+                reader.onload = function(e) {{
+                    imagePreview.src = e.target.result;
+                    imagePreview.classList.remove('hidden');
+                    restoreButton.disabled = false;
+                    
+                    // Store the base64 data (remove the data URL prefix)
+                    originalImageData = e.target.result.split(',')[1];
+                    debugLog('✅ Image loaded, base64 length: ' + originalImageData.length);
+                }};
+                
+                reader.readAsDataURL(file);
+            }});
+            
+            // Reset the form
+            function resetForm() {{
+                imageInput.value = '';
+                imagePreview.src = '';
+                imagePreview.classList.add('hidden');
+                restoreButton.disabled = true;
+                originalImageData = null;
+                
+                // Reset results area
+                resultsPlaceholder.classList.remove('hidden');
+                loadingIndicator.classList.add('hidden');
+                
+                debugLog('🔄 Form reset');
+            }}
+            
+            // Handle restore button click
+            restoreButton.addEventListener('click', function() {{
+                if (!originalImageData) {{
+                    alert('Please upload an image first.');
+                    return;
+                }}
+                
+                debugLog('🔄 Starting restoration process...');
+                
+                // Show loading state
+                loadingIndicator.classList.remove('hidden');
+                resultsPlaceholder.classList.add('hidden');
+                restoreButton.disabled = true;
+                restoreButton.textContent = 'Generating...';
+                
+                // Get form options
+                const options = getOptions();
+                debugLog('⚙️ Options: ' + JSON.stringify(options));
+                
+                const requestData = {{
+                    image_data: originalImageData,
+                    options: options,
+                    address: addrInput.value,
+                    lat: latHid.value,
+                    lon: lonHid.value
+                }};
+                
+                debugLog('📡 Sending request with data: ' + JSON.stringify({{
+                    image_data_length: originalImageData.length,
+                    options: options,
+                    address: addrInput.value,
+                    coordinates: latHid.value + ', ' + lonHid.value
+                }}));
+                
+                // Send request to API
+                fetch('/restore', {{
+                    method: 'POST',
+                    headers: {{
+                        'Content-Type': 'application/json'
+                    }},
+                    body: JSON.stringify(requestData)
+                }})
+                .then(response => {{
+                    debugLog('📡 Response received: ' + response.status);
+                    return response.json();
+                }})
+                .then(data => {{
+                    debugLog('📊 Response data: ' + JSON.stringify({{
+                        id: data.id,
+                        error: data.error,
+                        address: data.address,
+                        location: data.location
+                    }}));
+                    
+                    // Hide loading indicator
+                    loadingIndicator.classList.add('hidden');
+                    restoreButton.disabled = false;
+                    restoreButton.textContent = 'Generate Restoration';
+                    
+                    if (data.error) {{
+                        // Show error message
+                        showError(data.error, data.help);
+                        return;
+                    }}
+                    
+                    // Success - redirect to results page
+                    if (data.id) {{
+                        debugLog('✅ Redirecting to results: ' + data.id);
+                        window.location.href = `/results/${{data.id}}`;
+                    }} else {{
+                        showError('No result ID received from server');
+                    }}
+                }})
+                .catch(error => {{
+                    debugLog('❌ Request error: ' + error.message);
+                    loadingIndicator.classList.add('hidden');
+                    restoreButton.disabled = false;
+                    restoreButton.textContent = 'Generate Restoration';
+                    showError('Could not process your request. Please try again.');
+                }});
+            }});
+            
+            // Show error message
+            function showError(errorMessage, helpText) {{
+                debugLog('❌ Showing error: ' + errorMessage);
+                
+                let fullErrorMessage = `<div class="alert alert-error mb-4">
+                    <div>
+                        <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                        <span>Error: ${{errorMessage}}</span>
+                    </div>
+                </div>`;
+                
+                if (helpText) {{
+                    fullErrorMessage += `<div class="alert alert-info mb-4">
+                        <div>
+                            <svg xmlns="http://www.w3.org/2000/svg" class="stroke-current shrink-0 h-6 w-6" fill="none" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                            </svg>
+                            <span>${{helpText}}</span>
+                        </div>
+                    </div>`;
+                }}
+                
+                // Show error in results area
+                resultsPlaceholder.innerHTML = fullErrorMessage;
+                resultsPlaceholder.classList.remove('hidden');
+            }}
+            
+            // Initialize form state
+            resetForm();
+            
+            debugLog('✅ Initialization complete');
+        }});
+        """)
     
     return Title("Building Restoration Visualizer"), Main(
         form_script,
